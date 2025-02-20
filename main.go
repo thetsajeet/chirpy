@@ -1,16 +1,31 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+	"github.com/thetsajeet/chirpy/internal/database"
 )
 
 func main() {
+	godotenv.Load()
+
+	dbUrl := os.Getenv("DB_URL")
+
+	db, err := sql.Open("postgres", dbUrl)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	const filepathRoot = "."
 	const port = "8080"
 
@@ -22,6 +37,7 @@ func main() {
 
 	apiCfg := apiConfig{
 		fileServerHits: atomic.Int32{},
+		dbQueries:      database.New(db),
 	}
 
 	filepathHandler := http.StripPrefix("/app", http.FileServer(http.Dir(filepathRoot)))
@@ -37,6 +53,7 @@ func main() {
 
 type apiConfig struct {
 	fileServerHits atomic.Int32
+	dbQueries      *database.Queries
 }
 
 func handlerChipsValidator(w http.ResponseWriter, r *http.Request) {
