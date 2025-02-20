@@ -4,3 +4,6 @@ values (
     gen_random_uuid(), now(), now(), $1
 )
 returning *;
+
+-- name: DeleteAllUsers :exec
+delete from users;

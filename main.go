@@ -2,18 +2,16 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"sync/atomic"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/thetsajeet/chirpy/internal/database"
+	"github.com/thetsajeet/chirpy/internal/helper"
 )
 
 func main() {
@@ -38,6 +36,7 @@ func main() {
 	apiCfg := apiConfig{
 		fileServerHits: atomic.Int32{},
 		dbQueries:      database.New(db),
+		PLATFORM:       os.Getenv("PLATFORM"),
 	}
 
 	filepathHandler := http.StripPrefix("/app", http.FileServer(http.Dir(filepathRoot)))
@@ -45,77 +44,12 @@ func main() {
 	mux.HandleFunc("GET /api/healthz", handlerHealthz)
 	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerFileServerHits)
 	mux.HandleFunc("POST /admin/reset", apiCfg.handlerResetMetrics)
-	mux.HandleFunc("POST /api/validate_chirp", handlerChipsValidator)
+	mux.HandleFunc("POST /api/validate_chirp", HandlerChipsValidator)
+
+	mux.HandleFunc("POST /api/users", apiCfg.handlerUsersCreate)
 
 	log.Printf("Serving files from %s on port: %s\n", filepathRoot, port)
 	log.Fatal(server.ListenAndServe())
-}
-
-type apiConfig struct {
-	fileServerHits atomic.Int32
-	dbQueries      *database.Queries
-}
-
-func handlerChipsValidator(w http.ResponseWriter, r *http.Request) {
-	type parameters struct {
-		Body string `json:"body"`
-	}
-
-	type errorResonse struct {
-		Error string `json:"error"`
-	}
-
-	type validResponse struct {
-		Cleaned_Body string `json:"cleaned_body"`
-	}
-
-	defer r.Body.Close()
-
-	w.Header().Set("Content-Type", "application/json")
-
-	data, err := io.ReadAll(r.Body)
-	if err != nil {
-		respondWithError(w, 500, err.Error())
-	}
-
-	params := parameters{}
-	err = json.Unmarshal(data, &params)
-	if err != nil {
-		respondWithError(w, 500, err.Error())
-	}
-
-	if len(params.Body) > 140 {
-		errorResp := errorResonse{
-			Error: "Chirp is too long",
-		}
-		respondWithJSON(w, 400, errorResp)
-		return
-	}
-
-	clean_body := cleanBody(params.Body)
-
-	successResp := validResponse{
-		Cleaned_Body: clean_body,
-	}
-
-	respondWithJSON(w, 200, successResp)
-}
-
-func cleanBody(body string) string {
-	bodySl := strings.Fields(body)
-	resSl := make([]string, 0)
-	invalidWords := []string{"kerfuffle", "sharbert", "fornax"}
-	for _, b := range bodySl {
-		for _, inv := range invalidWords {
-			if strings.Compare(strings.ToLower(b), inv) == 0 {
-				b = "****"
-				break
-			}
-		}
-		resSl = append(resSl, b)
-	}
-	res := strings.Join(resSl, " ")
-	return res
 }
 
 func (cfg *apiConfig) middlewareMetricsInfo(next http.Handler) http.Handler {
@@ -142,7 +76,16 @@ func (cfg *apiConfig) handlerFileServerHits(w http.ResponseWriter, r *http.Reque
 }
 
 func (cfg *apiConfig) handlerResetMetrics(w http.ResponseWriter, r *http.Request) {
+	if cfg.PLATFORM != "dev" {
+		w.WriteHeader(403)
+	}
+
 	cfg.fileServerHits.Store(0)
+	err := cfg.dbQueries.DeleteAllUsers(r.Context())
+	if err != nil {
+		helper.RespondWithError(w, 400, "Couldn't delete users", err)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(http.StatusText(http.StatusOK)))
 }
