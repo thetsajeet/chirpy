@@ -112,3 +112,25 @@ func (cfg *apiConfig) AllChirps(w http.ResponseWriter, r *http.Request) {
 
 	helper.RespondWithJson(w, 200, resp)
 }
+
+func (cfg *apiConfig) GetChirp(w http.ResponseWriter, r *http.Request) {
+	chirpID, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil {
+		helper.RespondWithError(w, 400, "invalid chirpID", err)
+		return
+	}
+
+	chirp, err := cfg.dbQueries.GetChirpById(r.Context(), chirpID)
+	if err != nil {
+		helper.RespondWithError(w, 404, "not found", err)
+		return
+	}
+
+	helper.RespondWithJson(w, 200, Chirp{
+		ID:        chirp.ID,
+		Body:      chirp.Body,
+		UserID:    chirp.UserID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+	})
+}
