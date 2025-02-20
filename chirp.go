@@ -5,17 +5,25 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/thetsajeet/chirpy/internal/database"
 	"github.com/thetsajeet/chirpy/internal/helper"
 )
 
-func HandlerChipsValidator(w http.ResponseWriter, r *http.Request) {
-	type parameters struct {
-		Body string `json:"body"`
-	}
+type Chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
+}
 
-	type validResponse struct {
-		Cleaned_Body string `json:"cleaned_body"`
+func (cfg *apiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		Body   string    `json:"body"`
+		UserId uuid.UUID `json:"user_id"`
 	}
 
 	defer r.Body.Close()
@@ -46,8 +54,24 @@ func HandlerChipsValidator(w http.ResponseWriter, r *http.Request) {
 		"fornax":    {},
 	}
 
-	helper.RespondWithJson(w, 200, validResponse{
-		Cleaned_Body: getCleanedBody(params.Body, badWords),
+	cleanedBody := getCleanedBody(params.Body, badWords)
+
+	chirp, err := cfg.dbQueries.CreateChirp(r.Context(), database.CreateChirpParams{
+		Body:   cleanedBody,
+		UserID: params.UserId,
+	})
+
+	if err != nil {
+		helper.RespondWithError(w, 400, "Unable to create chirp", err)
+		return
+	}
+
+	helper.RespondWithJson(w, 201, Chirp{
+		ID:        chirp.ID,
+		CreatedAt: chirp.CreatedAt,
+		UpdatedAt: chirp.UpdatedAt,
+		Body:      chirp.Body,
+		UserID:    chirp.UserID,
 	})
 }
 
@@ -61,4 +85,30 @@ func getCleanedBody(body string, badWords map[string]struct{}) string {
 	}
 	cleaned := strings.Join(words, " ")
 	return cleaned
+}
+
+func (cfg *apiConfig) AllChirps(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
+
+	w.Header().Set("Content-Type", "application/json")
+
+	chirps, err := cfg.dbQueries.GetAllChirps(r.Context())
+	if err != nil {
+		helper.RespondWithError(w, 400, "unable to get all chirps", err)
+		return
+	}
+
+	resp := make([]Chirp, 0)
+
+	for _, chirp := range chirps {
+		resp = append(resp, Chirp{
+			ID:        chirp.ID,
+			CreatedAt: chirp.CreatedAt,
+			UpdatedAt: chirp.UpdatedAt,
+			Body:      chirp.Body,
+			UserID:    chirp.UserID,
+		})
+	}
+
+	helper.RespondWithJson(w, 200, resp)
 }
