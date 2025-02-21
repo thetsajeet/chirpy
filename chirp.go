@@ -146,3 +146,44 @@ func (cfg *apiConfig) GetChirp(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt: chirp.UpdatedAt,
 	})
 }
+
+func (cfg *apiConfig) DeleteChirp(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		helper.RespondWithError(w, 401, "not authenticated", err)
+		return
+	}
+
+	userId, err := auth.ValidateJWT(token, cfg.JWT_SECRET)
+	if err != nil {
+		helper.RespondWithError(w, 401, "not authenticated", err)
+		return
+	}
+
+	chirpID, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil {
+		helper.RespondWithError(w, 400, "invalid chirp id", err)
+		return
+	}
+
+	chirp, err := cfg.dbQueries.GetChirpById(r.Context(), chirpID)
+	if err != nil {
+		helper.RespondWithError(w, 404, "chirp not found", err)
+		return
+	}
+
+	if chirp.UserID != userId {
+		helper.RespondWithError(w, 403, "unauthorized", err)
+		return
+	}
+
+	if err := cfg.dbQueries.DeleteChirp(r.Context(), database.DeleteChirpParams{
+		UserID: userId,
+		ID:     chirpID,
+	}); err != nil {
+		helper.RespondWithError(w, 404, "unable to delete", err)
+		return
+	}
+
+	helper.RespondWithJson(w, 204, map[string]any{})
+}

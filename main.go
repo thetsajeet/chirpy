@@ -58,6 +58,7 @@ func main() {
 	mux.HandleFunc("POST /api/refresh", apiCfg.handleRefresh)
 	mux.HandleFunc("POST /api/revoke", apiCfg.handleRevoke)
 	mux.HandleFunc("PUT /api/users", apiCfg.handleUpdate)
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", apiCfg.DeleteChirp)
 
 	log.Printf("Serving files from %s on port: %s\n", filepathRoot, port)
 	log.Fatal(server.ListenAndServe())
