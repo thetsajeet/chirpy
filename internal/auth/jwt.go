@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,13 +16,12 @@ import (
 func MakeJWT(
 	userID uuid.UUID,
 	tokenSecret string,
-	expiresIn time.Duration,
 ) (string, error) {
 	signingKey := []byte(tokenSecret)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Issuer:    "chirpy",
 		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
-		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(expiresIn)),
+		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Hour * 1)),
 		Subject:   userID.String(),
 	})
 	return token.SignedString(signingKey)
@@ -61,11 +62,19 @@ func GetBearerToken(headers http.Header) (string, error) {
 	if bearerToken := headers.Get("Authorization"); bearerToken == "" {
 		return "", errors.New("no bearer token found")
 	} else {
-		token, exists := strings.CutPrefix(bearerToken, "Bearer ")
-		if exists {
-			return token, nil
+		tokenSl := strings.Split(bearerToken, " ")
+		if len(tokenSl) != 2 || tokenSl[0] != "Bearer" {
+			return "", errors.New("malformed token")
 		}
-
-		return "", errors.New("'Bearer 'prefix missing")
+		return tokenSl[1], nil
 	}
+}
+
+func MakeRefreshToken() (string, error) {
+	token := make([]byte, 32)
+	_, err := rand.Read(token)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(token), nil
 }

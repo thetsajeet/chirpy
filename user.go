@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -58,9 +59,14 @@ func (cfg *apiConfig) handlerUsersCreate(w http.ResponseWriter, r *http.Request)
 
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 	type params struct {
-		Password  string `json:"password"`
-		Email     string `json:"email"`
-		ExpiresIn *int   `json:"expires_in_seconds"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+
+	type response struct {
+		User
+		Token        string `json:"token"`
+		RefreshToken string `json:"refresh_token"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -69,11 +75,6 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		helper.RespondWithError(w, 500, "unable to unmarshall json", err)
 		return
-	}
-
-	expiration := 0
-	if p.ExpiresIn == nil || *p.ExpiresIn > 3600 {
-		expiration = 3600
 	}
 
 	dat, err := cfg.dbQueries.LoginUser(r.Context(), p.Email)
@@ -87,17 +88,77 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := auth.MakeJWT(dat.ID, cfg.JWT_SECRET, time.Duration(expiration*int(time.Second)))
+	token, err := auth.MakeJWT(dat.ID, cfg.JWT_SECRET)
 	if err != nil {
 		helper.RespondWithError(w, 500, "unable to create token", err)
 		return
 	}
 
-	helper.RespondWithJson(w, 200, User{
-		ID:        dat.ID,
-		Email:     dat.Email,
-		CreatedAt: dat.CreatedAt,
-		UpdatedAt: dat.UpdatedAt,
-		Token:     token,
+	refreshToken, err := auth.MakeRefreshToken()
+	if err != nil {
+		helper.RespondWithError(w, 500, "unable to create refresh token", err)
+		return
+	}
+
+	err = cfg.dbQueries.StoreRefreshToken(r.Context(), database.StoreRefreshTokenParams{
+		Token:     refreshToken,
+		UserID:    dat.ID,
+		ExpiresAt: time.Now().Add(60 * time.Hour * 24),
 	})
+	if err != nil {
+		helper.RespondWithError(w, 400, "unable to create refresh token", err)
+		return
+	}
+
+	helper.RespondWithJson(w, 200, response{
+		User: User{
+			ID:        dat.ID,
+			Email:     dat.Email,
+			CreatedAt: dat.CreatedAt,
+			UpdatedAt: dat.UpdatedAt,
+		},
+		Token:        token,
+		RefreshToken: refreshToken,
+	})
+}
+
+func (cfg *apiConfig) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	refreshToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		helper.RespondWithError(w, 401, "unauthorized", err)
+		return
+	}
+
+	dat, err := cfg.dbQueries.LookupToken(r.Context(), refreshToken)
+	if err != nil || dat.ExpiresAt.Compare(time.Now()) <= 0 || (dat.RevokedAt.Valid && dat.RevokedAt.Time.Compare(time.Now()) <= 0) {
+		helper.RespondWithError(w, 401, "token expired or not found", err)
+		return
+	}
+
+	token, err := auth.MakeJWT(dat.UserID, cfg.JWT_SECRET)
+	if err != nil {
+		helper.RespondWithError(w, 500, "unable to make JWT", err)
+		return
+	}
+
+	fmt.Printf("%v", token)
+
+	helper.RespondWithJson(w, 200, map[string]any{
+		"token": token,
+	})
+}
+
+func (cfg *apiConfig) handleRevoke(w http.ResponseWriter, r *http.Request) {
+	refreshToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		helper.RespondWithError(w, 401, "unauthorized", err)
+		return
+	}
+
+	if err := cfg.dbQueries.RevokeToken(r.Context(), refreshToken); err != nil {
+		helper.RespondWithError(w, 401, "something went wrong", err)
+		return
+	}
+
+	helper.RespondWithJson(w, 204, map[string]any{})
 }
