@@ -162,3 +162,51 @@ func (cfg *apiConfig) handleRevoke(w http.ResponseWriter, r *http.Request) {
 
 	helper.RespondWithJson(w, 204, map[string]any{})
 }
+
+func (cfg *apiConfig) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+
+	params := parameters{}
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		helper.RespondWithError(w, 500, "unable to decode json", err)
+		return
+	}
+
+	accessToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		helper.RespondWithError(w, 401, "unauthorized", err)
+		return
+	}
+
+	userId, err := auth.ValidateJWT(accessToken, cfg.JWT_SECRET)
+	if err != nil {
+		helper.RespondWithError(w, 401, "unauthorized", err)
+		return
+	}
+
+	hashedPassword, err := auth.HashPassword(params.Password)
+	if err != nil {
+		helper.RespondWithError(w, 401, "unable to hash password", err)
+		return
+	}
+
+	dat, err := cfg.dbQueries.UpdateUser(r.Context(), database.UpdateUserParams{
+		Email:          params.Email,
+		HashedPassword: hashedPassword,
+		ID:             userId,
+	})
+	if err != nil {
+		helper.RespondWithError(w, 400, "unable to save to db", err)
+		return
+	}
+
+	helper.RespondWithJson(w, 200, User{
+		ID:        userId,
+		CreatedAt: dat.CreatedAt,
+		UpdatedAt: dat.UpdatedAt,
+		Email:     dat.Email,
+	})
+}
