@@ -37,6 +37,11 @@ func main() {
 		fileServerHits: atomic.Int32{},
 		dbQueries:      database.New(db),
 		PLATFORM:       os.Getenv("PLATFORM"),
+		JWT_SECRET:     os.Getenv("JWT_SECRET"),
+	}
+
+	if apiCfg.JWT_SECRET == "" {
+		log.Fatal("JWT_SECRET is not set")
 	}
 
 	filepathHandler := http.StripPrefix("/app", http.FileServer(http.Dir(filepathRoot)))

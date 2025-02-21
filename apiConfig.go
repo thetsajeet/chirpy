@@ -10,4 +10,5 @@ type apiConfig struct {
 	fileServerHits atomic.Int32
 	dbQueries      *database.Queries
 	PLATFORM       string
+	JWT_SECRET     string
 }

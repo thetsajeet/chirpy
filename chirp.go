@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/thetsajeet/chirpy/internal/auth"
 	"github.com/thetsajeet/chirpy/internal/database"
 	"github.com/thetsajeet/chirpy/internal/helper"
 )
@@ -22,8 +23,7 @@ type Chirp struct {
 
 func (cfg *apiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
-		Body   string    `json:"body"`
-		UserId uuid.UUID `json:"user_id"`
+		Body string `json:"body"`
 	}
 
 	defer r.Body.Close()
@@ -43,6 +43,18 @@ func (cfg *apiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		helper.RespondWithError(w, 401, "unauthorized", err)
+		return
+	}
+
+	userId, err := auth.ValidateJWT(token, cfg.JWT_SECRET)
+	if err != nil {
+		helper.RespondWithError(w, 401, "unauthorized", err)
+		return
+	}
+
 	if len(params.Body) > 140 {
 		helper.RespondWithError(w, 400, "Chirp is too long", nil)
 		return
@@ -58,7 +70,7 @@ func (cfg *apiConfig) CreateChirp(w http.ResponseWriter, r *http.Request) {
 
 	chirp, err := cfg.dbQueries.CreateChirp(r.Context(), database.CreateChirpParams{
 		Body:   cleanedBody,
-		UserID: params.UserId,
+		UserID: userId,
 	})
 
 	if err != nil {

@@ -16,6 +16,7 @@ type User struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+	Token     string    `json:"token,omitempty"`
 }
 
 func (cfg *apiConfig) handlerUsersCreate(w http.ResponseWriter, r *http.Request) {
@@ -57,8 +58,9 @@ func (cfg *apiConfig) handlerUsersCreate(w http.ResponseWriter, r *http.Request)
 
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 	type params struct {
-		Password string `json:"password"`
-		Email    string `json:"email"`
+		Password  string `json:"password"`
+		Email     string `json:"email"`
+		ExpiresIn *int   `json:"expires_in_seconds"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -67,6 +69,11 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		helper.RespondWithError(w, 500, "unable to unmarshall json", err)
 		return
+	}
+
+	expiration := 0
+	if p.ExpiresIn == nil || *p.ExpiresIn > 3600 {
+		expiration = 3600
 	}
 
 	dat, err := cfg.dbQueries.LoginUser(r.Context(), p.Email)
@@ -80,10 +87,17 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	token, err := auth.MakeJWT(dat.ID, cfg.JWT_SECRET, time.Duration(expiration*int(time.Second)))
+	if err != nil {
+		helper.RespondWithError(w, 500, "unable to create token", err)
+		return
+	}
+
 	helper.RespondWithJson(w, 200, User{
 		ID:        dat.ID,
 		Email:     dat.Email,
 		CreatedAt: dat.CreatedAt,
 		UpdatedAt: dat.UpdatedAt,
+		Token:     token,
 	})
 }

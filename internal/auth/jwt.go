@@ -3,18 +3,24 @@ package auth
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
-func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (string, error) {
+func MakeJWT(
+	userID uuid.UUID,
+	tokenSecret string,
+	expiresIn time.Duration,
+) (string, error) {
 	signingKey := []byte(tokenSecret)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
 		Issuer:    "chirpy",
 		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiresIn).UTC()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(expiresIn)),
 		Subject:   userID.String(),
 	})
 	return token.SignedString(signingKey)
@@ -22,9 +28,11 @@ func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (str
 
 func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	claimsStruct := jwt.RegisteredClaims{}
-	token, err := jwt.ParseWithClaims(tokenString, &claimsStruct, func(token *jwt.Token) (any, error) {
-		return []byte(tokenSecret), nil
-	})
+	token, err := jwt.ParseWithClaims(
+		tokenString,
+		&claimsStruct,
+		func(token *jwt.Token) (interface{}, error) { return []byte(tokenSecret), nil },
+	)
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -38,15 +46,26 @@ func ValidateJWT(tokenString, tokenSecret string) (uuid.UUID, error) {
 	if err != nil {
 		return uuid.Nil, err
 	}
-
 	if issuer != "chirpy" {
-		return uuid.Nil, errors.New("invalid access")
+		return uuid.Nil, errors.New("invalid issuer")
 	}
 
 	id, err := uuid.Parse(userIDString)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("invalid user id: %w", err)
+		return uuid.Nil, fmt.Errorf("invalid user ID: %w", err)
 	}
-
 	return id, nil
+}
+
+func GetBearerToken(headers http.Header) (string, error) {
+	if bearerToken := headers.Get("Authorization"); bearerToken == "" {
+		return "", errors.New("no bearer token found")
+	} else {
+		token, exists := strings.CutPrefix(bearerToken, "Bearer ")
+		if exists {
+			return token, nil
+		}
+
+		return "", errors.New("'Bearer 'prefix missing")
+	}
 }
