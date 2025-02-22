@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -101,24 +102,39 @@ func getCleanedBody(body string, badWords map[string]struct{}) string {
 
 func (cfg *apiConfig) AllChirps(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
-
 	w.Header().Set("Content-Type", "application/json")
 
-	chirps, err := cfg.dbQueries.GetAllChirps(r.Context())
+	var chirps []database.Chirp = []database.Chirp{}
+	var err error = nil
+	if author_id := r.URL.Query().Get("author_id"); len(author_id) != 0 {
+		var id uuid.UUID = uuid.UUID{}
+		id, err = uuid.Parse(author_id)
+		if err == nil {
+			chirps, err = cfg.dbQueries.GetChirpsByAuthorId(r.Context(), id)
+		}
+	} else {
+		chirps, err = cfg.dbQueries.GetAllChirps(r.Context())
+	}
+
 	if err != nil {
 		helper.RespondWithError(w, 400, "unable to get all chirps", err)
 		return
 	}
 
-	resp := make([]Chirp, 0)
+	if r.URL.Query().Get("sort") == "desc" {
+		slices.SortFunc(chirps, func(a, b database.Chirp) int {
+			return b.CreatedAt.Compare(a.CreatedAt)
+		})
+	}
 
-	for _, chirp := range chirps {
+	resp := make([]Chirp, 0)
+	for _, v := range chirps {
 		resp = append(resp, Chirp{
-			ID:        chirp.ID,
-			CreatedAt: chirp.CreatedAt,
-			UpdatedAt: chirp.UpdatedAt,
-			Body:      chirp.Body,
-			UserID:    chirp.UserID,
+			ID:        v.ID,
+			CreatedAt: v.CreatedAt,
+			UpdatedAt: v.UpdatedAt,
+			Body:      v.Body,
+			UserID:    v.UserID,
 		})
 	}
 
