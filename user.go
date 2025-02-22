@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -13,11 +14,12 @@ import (
 )
 
 type User struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
-	Token     string    `json:"token,omitempty"`
+	ID          uuid.UUID `json:"id"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Email       string    `json:"email"`
+	Token       string    `json:"token,omitempty"`
+	IsChirpyRed bool      `json:"is_chirpy_red"`
 }
 
 func (cfg *apiConfig) handlerUsersCreate(w http.ResponseWriter, r *http.Request) {
@@ -50,10 +52,11 @@ func (cfg *apiConfig) handlerUsersCreate(w http.ResponseWriter, r *http.Request)
 	}
 
 	helper.RespondWithJson(w, http.StatusCreated, User{
-		ID:        user.ID,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-		Email:     user.Email,
+		ID:          user.ID,
+		CreatedAt:   user.CreatedAt,
+		UpdatedAt:   user.UpdatedAt,
+		Email:       user.Email,
+		IsChirpyRed: user.IsChirpyRed,
 	})
 }
 
@@ -112,10 +115,11 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 
 	helper.RespondWithJson(w, 200, response{
 		User: User{
-			ID:        dat.ID,
-			Email:     dat.Email,
-			CreatedAt: dat.CreatedAt,
-			UpdatedAt: dat.UpdatedAt,
+			ID:          dat.ID,
+			Email:       dat.Email,
+			CreatedAt:   dat.CreatedAt,
+			UpdatedAt:   dat.UpdatedAt,
+			IsChirpyRed: dat.IsChirpyRed,
 		},
 		Token:        token,
 		RefreshToken: refreshToken,
@@ -204,9 +208,45 @@ func (cfg *apiConfig) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	helper.RespondWithJson(w, 200, User{
-		ID:        userId,
-		CreatedAt: dat.CreatedAt,
-		UpdatedAt: dat.UpdatedAt,
-		Email:     dat.Email,
+		ID:          userId,
+		CreatedAt:   dat.CreatedAt,
+		UpdatedAt:   dat.UpdatedAt,
+		Email:       dat.Email,
+		IsChirpyRed: dat.IsChirpyRed,
 	})
+}
+
+func (cfg *apiConfig) UpgradeUser(w http.ResponseWriter, r *http.Request) {
+	type params struct {
+		Event string `json:"event"`
+		Data  struct {
+			UserId uuid.UUID `json:"user_id"`
+		} `json:"data"`
+	}
+
+	if apiKey, err := auth.GetAPIKey(r.Header); err != nil {
+		helper.RespondWithError(w, 401, "something went wrong", err)
+		return
+	} else if apiKey != cfg.POLKA_KEY {
+		helper.RespondWithError(w, 401, "invalid api key", errors.New("invalid api key"))
+		return
+	}
+
+	p := params{}
+	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		helper.RespondWithError(w, 400, "unable to decode json", err)
+		return
+	}
+
+	if p.Event != "user.upgraded" {
+		helper.RespondWithJson(w, 204, map[string]any{})
+		return
+	}
+
+	if err := cfg.dbQueries.UpdateChirpyRed(r.Context(), p.Data.UserId); err != nil {
+		helper.RespondWithError(w, 404, "something went wrong", err)
+		return
+	}
+
+	helper.RespondWithJson(w, 204, map[string]any{})
 }

@@ -38,6 +38,7 @@ func main() {
 		dbQueries:      database.New(db),
 		PLATFORM:       os.Getenv("PLATFORM"),
 		JWT_SECRET:     os.Getenv("JWT_SECRET"),
+		POLKA_KEY:      os.Getenv("POLKA_KEY"),
 	}
 
 	if apiCfg.JWT_SECRET == "" {
@@ -59,6 +60,7 @@ func main() {
 	mux.HandleFunc("POST /api/revoke", apiCfg.handleRevoke)
 	mux.HandleFunc("PUT /api/users", apiCfg.handleUpdate)
 	mux.HandleFunc("DELETE /api/chirps/{chirpID}", apiCfg.DeleteChirp)
+	mux.HandleFunc("POST /api/polka/webhooks", apiCfg.UpgradeUser)
 
 	log.Printf("Serving files from %s on port: %s\n", filepathRoot, port)
 	log.Fatal(server.ListenAndServe())

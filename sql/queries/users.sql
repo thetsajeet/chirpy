@@ -3,7 +3,7 @@ insert into users (id, created_at, updated_at, email, hashed_password)
 values (
     gen_random_uuid(), now(), now(), $1, $2
 )
-returning id, created_at, updated_at, email;
+returning id, created_at, updated_at, email, is_chirpy_red;
 
 -- name: DeleteAllUsers :exec
 delete from users;
@@ -17,4 +17,9 @@ where email = $1;
 update users
 set email = $1, hashed_password = $2, updated_at = now()
 where id = $3
-returning id, created_at, updated_at, email;
+returning id, created_at, updated_at, email, is_chirpy_red;
+
+-- name: UpdateChirpyRed :exec
+update users
+set is_chirpy_red = true
+where id = $1;
